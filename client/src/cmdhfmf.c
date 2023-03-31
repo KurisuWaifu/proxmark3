@@ -7804,11 +7804,14 @@ static int CmdHF14AMfValue(const char *Cmd) {
         arg_lit0(NULL, "get", "Get value from block"),
         arg_int0(NULL, "blk", "<dec>", "block number"),
         arg_str0("d", "data", "<hex>", "block data to extract values from (16 hex bytes)"),
+        arg_lit0(NULL, "transfer", "Move value from --blk to --blk2 (auth --blk with FFFFFFFFFFFF and --blk2 with -k)"),
+        arg_int0(NULL, "blk2", "<dec>", "destination block number"),
         arg_param_end
     };
     CLIExecWithReturn(ctx, Cmd, argtable, false);
 
     uint8_t blockno = (uint8_t)arg_get_int_def(ctx, 8, 1);
+    uint8_t blockno2 = (uint8_t)arg_get_int_def(ctx, 11, 1);
 
     uint8_t keytype = MF_KEY_A;
     if (arg_get_lit(ctx, 2) && arg_get_lit(ctx, 3)) {
@@ -7836,6 +7839,7 @@ static int CmdHF14AMfValue(const char *Cmd) {
     int64_t decval = (int64_t)arg_get_u64_def(ctx, 5, -1); // Inc by -1 is invalid, so not set.
     int64_t setval = (int64_t)arg_get_u64_def(ctx, 6, 0x7FFFFFFFFFFFFFFF);  // out of bounds (for int32) so not set
     bool getval = arg_get_lit(ctx, 7);
+    bool transval = arg_get_lit(ctx, 10);
     int dlen = 0;
     uint8_t data[16] = {0};
     CLIGetHexWithReturn(ctx, 9, data, &dlen);
@@ -7886,14 +7890,18 @@ static int CmdHF14AMfValue(const char *Cmd) {
         }
     }
 
+    if (transval){
+        optionsprovided++;
+    }    
+
     if (optionsprovided > 1) { // more then one option provided
-        PrintAndLogEx(WARNING, "must have one and only one of --inc, --dec, --set or --data");
+        PrintAndLogEx(WARNING, "must have one and only one of --inc, --dec, --set, --transfer or --data");
         return PM3_EINVARG;
     }
 
     // dont want to write value data and break something
     if ((blockno == 0) || (mfIsSectorTrailer(blockno))) {
-        PrintAndLogEx(WARNING, "invlaid block number, should be a data block ");
+        PrintAndLogEx(WARNING, "invalid block number, should be a data block ");
         return PM3_EINVARG;
     }
 
@@ -7970,6 +7978,33 @@ static int CmdHF14AMfValue(const char *Cmd) {
                 PrintAndLogEx(FAILED, "Update ( " _RED_("failed") " )");
             }
         }
+    }
+    if (transval){
+        if (g_session.pm3_present == false)
+            return PM3_ENOTTY;
+
+        uint8_t cmddata[26];
+        uint8_t key1[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+        memcpy(cmddata, key1, sizeof(key1));  // Key == 6 data went to 10, so lets offset 9 for inc/dec
+        memcpy(cmddata + 10, key, sizeof(key)); // Store the second key
+        cmddata[9] = blockno2; // Store the second block
+        PrintAndLogEx(INFO, "Transferring value from block no %d, key %c - %s to block no %d, key %c - %s", blockno, (keytype == MF_KEY_B) ? 'B' : 'A', sprint_hex_inrow(key1, sizeof(key1)), blockno2, (keytype == MF_KEY_B) ? 'B' : 'A', sprint_hex_inrow(key, sizeof(key)));
+
+        clearCommandBuffer();
+        SendCommandMIX(CMD_HF_MIFARE_TRANSFER, blockno, keytype, 0, cmddata, sizeof(cmddata));
+
+        PacketResponseNG resp;
+        if (WaitForResponseTimeout(CMD_ACK, &resp, 1500) == false) {
+            PrintAndLogEx(FAILED, "Command execute timeout");
+            return PM3_ETIMEOUT;
+         }
+        if (resp.oldarg[0] & 0xFF) {
+          // all ok so set flag to read current value
+            getval = true;
+             PrintAndLogEx(SUCCESS, "Update ( " _GREEN_("success") " )");
+        } else {
+             PrintAndLogEx(FAILED, "Update ( " _RED_("failed") " )");
+        } 
     }
 
     // If all went well getval will be true, so read the current value and display
