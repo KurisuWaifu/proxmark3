@@ -28,6 +28,7 @@ void MifareReadSector(uint8_t arg0, uint8_t arg1, uint8_t *datain);
 void MifareWriteBlock(uint8_t arg0, uint8_t arg1, uint8_t *datain);
 void MifareValue(uint8_t arg0, uint8_t arg1, uint8_t *datain);
 void MifareTransfer(uint8_t arg0, uint8_t arg1, uint8_t *datain);
+ void MifareDecrementAttack(uint8_t arg0, uint8_t arg1, uint8_t *datain);
 void MifareUWriteBlockCompat(uint8_t arg0, uint8_t arg1, uint8_t *datain);
 void MifareUWriteBlock(uint8_t arg0, uint8_t arg1, uint8_t *datain);
 void MifareNested(uint8_t blockNo, uint8_t keyType, uint8_t targetBlockNo, uint8_t targetKeyType, bool calibrate, uint8_t *key);

