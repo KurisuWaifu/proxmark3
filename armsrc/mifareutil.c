@@ -517,7 +517,37 @@ int mifare_classic_write_cfg_block_gdm(struct Crypto1State *pcs, uint32_t uid, u
     return 0;
 }
 
+int mifare_classic_restore(struct Crypto1State *pcs, uint32_t uid, uint8_t blockNo) {
+    // variables
+    uint16_t len = 0;
+    uint8_t receivedAnswer[MAX_MIFARE_FRAME_SIZE] = {0x00};
+    uint8_t receivedAnswerPar[MAX_MIFARE_PARITY_SIZE] = {0x00};
 
+    // Send increment or decrement command
+    len = mifare_sendcmd_short(pcs, 1, MIFARE_CMD_RESTORE, blockNo, receivedAnswer, receivedAnswerPar, NULL);
+
+    if ((len != 1) || (receivedAnswer[0] != 0x0A)) {   //  0x0a - ACK
+        if (g_dbglevel >= DBG_ERROR) Dbprintf("Cmd Error: %02x", receivedAnswer[0]);
+        return 1;
+    }
+    return 0;
+}
+
+int mifare_classic_transfer(struct Crypto1State *pcs, uint32_t uid, uint8_t blockNo) {
+    // variables
+    uint16_t len = 0;
+    uint8_t receivedAnswer[MAX_MIFARE_FRAME_SIZE] = {0x00};
+    uint8_t receivedAnswerPar[MAX_MIFARE_PARITY_SIZE] = {0x00};
+
+    // Send increment or decrement command
+    len = mifare_sendcmd_short(pcs, 1, MIFARE_CMD_TRANSFER, blockNo, receivedAnswer, receivedAnswerPar, NULL);
+
+    if ((len != 1) || (receivedAnswer[0] != 0x0A)) {   //  0x0a - ACK
+        if (g_dbglevel >= DBG_ERROR) Dbprintf("Cmd Error: %02x", receivedAnswer[0]);
+        return 1;
+    }
+    return 0;
+}
 
 int mifare_classic_value(struct Crypto1State *pcs, uint32_t uid, uint8_t blockNo, uint8_t *blockData, uint8_t action) {
     // variables
