@@ -1591,6 +1591,10 @@ static void PacketReceived(PacketCommandNG *packet) {
             MifareTransfer(packet->oldarg[0], packet->oldarg[1], packet->data.asBytes);
             break;
         }
+        case CMD_HF_MIFARE_DEC_ATTACK: {
+            MifareDecrementAttack(packet->oldarg[0], packet->oldarg[1], packet->data.asBytes);
+            break;
+        }
         case CMD_HF_MIFAREU_WRITEBL: {
             MifareUWriteBlock(packet->oldarg[0], packet->oldarg[1], packet->data.asBytes);
             break;
