@@ -640,7 +640,79 @@ OUT:
     set_tracing(false);
     BigBuf_free();
 }
+void MifareTransfer(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
+    // params
+    uint8_t blockNo1 = arg0;
+    uint8_t blockNo2 = datain[9];
+    uint8_t keyType = arg1;
+    uint64_t ui64Key1 = 0;
+    uint64_t ui64Key2 = 0;
 
+    ui64Key1 = bytes_to_num(datain, 6);
+    ui64Key2 = bytes_to_num(datain + 10, 6);
+
+    // variables
+    uint8_t isOK = 0;
+    uint8_t uid[10] = {0x00};
+    uint32_t cuid = 0;
+    struct Crypto1State mpcs = {0, 0};
+    struct Crypto1State *pcs;
+    pcs = &mpcs;
+
+    iso14443a_setup(FPGA_HF_ISO14443A_READER_LISTEN);
+
+    clear_trace();
+    set_tracing(true);
+
+    LED_A_ON();
+    LED_B_OFF();
+    LED_C_OFF();
+
+    while (true) {
+        if (!iso14443a_select_card(uid, NULL, &cuid, true, 0, true)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Can't select card");
+            break;
+        };
+
+        if (mifare_classic_auth(pcs, cuid, blockNo1, keyType, ui64Key1, AUTH_FIRST)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Auth error");
+            break;
+        };
+
+        if (mifare_classic_restore(pcs, cuid, blockNo1)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Write block error");
+            break;
+        };
+
+        if (mifare_classic_auth(pcs, cuid, blockNo2, keyType, ui64Key2, AUTH_NESTED)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Auth error");
+            break;
+        };
+
+        if (mifare_classic_transfer(pcs, cuid, blockNo2)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Write block error");
+            break;
+        };
+
+        if (mifare_classic_halt(pcs, cuid)) {
+            if (g_dbglevel >= DBG_ERROR) Dbprintf("Halt error");
+            break;
+        };
+
+        isOK = 1;
+        break;
+    }
+
+    crypto1_deinit(pcs);
+
+    if (g_dbglevel >= 2) DbpString("WRITE BLOCK FINISHED");
+
+    reply_mix(CMD_ACK, isOK, 0, 0, 0, 0);
+
+    FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+    LEDsoff();
+    set_tracing(false);
+}
 
 void MifareValue(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
     // params
