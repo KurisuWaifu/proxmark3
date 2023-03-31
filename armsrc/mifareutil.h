@@ -82,6 +82,8 @@ int mifare_classic_halt_ex(struct Crypto1State *pcs);
 int mifare_classic_writeblock(struct Crypto1State *pcs, uint32_t uid, uint8_t blockNo, uint8_t *blockData);
 int mifare_classic_writeblock_ex(struct Crypto1State *pcs, uint32_t uid, uint8_t blockNo, uint8_t *blockData, bool is_gdm);
 int mifare_classic_value(struct Crypto1State *pcs, uint32_t uid, uint8_t blockNo, uint8_t *blockData, uint8_t action);
+int mifare_classic_restore(struct Crypto1State *pcs, uint32_t uid, uint8_t blockNo);
+int mifare_classic_transfer(struct Crypto1State *pcs, uint32_t uid, uint8_t blockNo);
 int mifare_classic_write_cfg_block_gdm(struct Crypto1State *pcs, uint32_t uid, uint8_t *blockData);
 
 // Ultralight/NTAG...
