@@ -7890,10 +7890,32 @@ static int CmdHF14AMfDecAttack(const char *Cmd) {
         return PM3_ETIMEOUT;
     }
 
+    bool getval = false;
+
     if (resp.oldarg[0] & 0xFF) {
         PrintAndLogEx(SUCCESS, "Update ( " _GREEN_("success") " )");
+        getval = true;
     } else {
         PrintAndLogEx(FAILED, "Update ( " _RED_("failed") " )");
+    }
+
+    if (getval) {
+        int32_t readvalue;
+        int res = -1;
+
+        
+        res = mfReadBlock(blockAttackno, keytypeAttack, keyAttack, data);
+    
+        if (res == PM3_SUCCESS) {
+            if (mfc_value(data, &readvalue))  {
+                PrintAndLogEx(SUCCESS, "Dec ...... : " _YELLOW_("%" PRIi32), readvalue);
+                PrintAndLogEx(SUCCESS, "Hex ...... : " _YELLOW_("0x%" PRIX32), readvalue);
+            } else {
+                PrintAndLogEx(FAILED, "No value block detected");
+            }
+        } else {
+            PrintAndLogEx(FAILED, "failed to read value block");
+        }
     }
 
     return PM3_SUCCESS;
